@@ -34,6 +34,10 @@ fn pipeline() -> Result<DataFrame> {
         .pipe(rename_cols)
         .expect("could not rename columns")
         .pipe(print_state)
+        .expect("could not prepare DataFrame")
+        .pipe(draw_histogram)
+        .expect("could not draw histogram")
+        .pipe(calculate_statistics)
 }
 
 fn draw_histogram(df: DataFrame) -> Result<DataFrame> {
@@ -42,15 +46,15 @@ fn draw_histogram(df: DataFrame) -> Result<DataFrame> {
     root.fill(&WHITE).expect("Failed to fill histogram");
 
     let lidar = df.column("lidar").expect("could not find `lidar` column");
-    let lidar_max = lidar.max().expect("cannot take max operation") as u32;
-    let lidar_min = lidar.min().expect("cannot take min operation") as u32;
+    let lidar_max: i64 = lidar.max().expect("cannot take max operation");
+    let lidar_min: i64 = lidar.min().expect("cannot take min operation");
 
     let mut chart = ChartBuilder::on(&root)
         .x_label_area_size(35)
         .y_label_area_size(40)
         .margin(5)
         .caption("Lidar Histogram", ("sans-serif", 30))
-        .build_cartesian_2d((lidar_min..lidar_max).into_segmented(), 0u32..5000u32)
+        .build_cartesian_2d((lidar_min..lidar_max).into_segmented(), 0i64..5000i64)
         .expect("could not prepare chart");
 
     chart
@@ -66,14 +70,23 @@ fn draw_histogram(df: DataFrame) -> Result<DataFrame> {
         .draw_series(
             Histogram::vertical(&chart)
                 .style(BLUE.mix(0.5).filled())
-                .data(lidar.as_ref().into_iter().map(|x: &i64| (*x, 1))),
+                .data(lidar.i64().unwrap().into_iter().map(|x| (x.unwrap(), 1))),
         )
         .expect("could not draw series");
 
     Ok(df)
 }
 
+fn calculate_statistics(df: DataFrame) -> Result<DataFrame> {
+    let lidar = df.column("lidar").expect("could not find `lidar` column");
+    let sum: i64 = lidar.sum().unwrap();
+    let mean1 = (sum as f64) / (lidar.len() as f64);
+    let mean2: f64 = lidar.mean().unwrap();
+
+    println!("{} {}", mean1, mean2);
+    Ok(df)
+}
+
 fn main() {
-    let df = pipeline().expect("could not prepare DataFrame");
-    draw_histogram(df);
+    let _df = pipeline().expect("could not prepare DataFrame");
 }
