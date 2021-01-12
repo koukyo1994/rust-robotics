@@ -40,6 +40,8 @@ fn pipeline() -> Result<DataFrame> {
         .pipe(calculate_statistics)
         .unwrap()
         .pipe(draw_histogram_with_mean_line)
+        .unwrap()
+        .pipe(to_probability)
 }
 
 fn draw_histogram(df: DataFrame) -> Result<DataFrame> {
@@ -85,7 +87,30 @@ fn calculate_statistics(df: DataFrame) -> Result<DataFrame> {
     let mean1 = (sum as f64) / (lidar.len() as f64);
     let mean2: f64 = lidar.mean().unwrap();
 
+    let diff_square: Series = lidar
+        .i64()
+        .unwrap()
+        .into_iter()
+        .map(|opt_x| match opt_x {
+            Some(x) => Some(((x as f64) - mean1).powi(2)),
+            None => None,
+        })
+        .collect();
+
+    let sum_diff_square: f64 = diff_square.sum().unwrap();
+    let sampling_var: f64 = sum_diff_square / (lidar.len() as f64);
+    let unbiased_var: f64 = sum_diff_square / ((lidar.len() as f64) - 1.0);
+
+    let stddev1 = sampling_var.sqrt();
+    let stddev2 = unbiased_var.sqrt();
+
     println!("{} {}", mean1, mean2);
+    println!(
+        "sampling var {} unbiased var {}",
+        sampling_var, unbiased_var
+    );
+    println!("sampling std {} unbiased sqrt {}", stddev1, stddev2);
+
     Ok(df)
 }
 
@@ -137,6 +162,28 @@ fn draw_histogram_with_mean_line(df: DataFrame) -> Result<DataFrame> {
         .draw_series(mean_line)
         .expect("could not draw mean line");
 
+    Ok(df)
+}
+
+fn to_probability(df: DataFrame) -> Result<DataFrame> {
+    let lidar = df.column("lidar").unwrap();
+    let mut value_counts = lidar.value_counts().unwrap();
+
+    let counts = value_counts.column("counts").unwrap();
+    let mut probs: Series = counts
+        .u32()
+        .unwrap()
+        .into_iter()
+        .map(|opt_x| match opt_x {
+            Some(x) => Some((x as f64) / (lidar.len() as f64)),
+            None => None,
+        })
+        .collect();
+
+    probs.rename("probs");
+
+    value_counts = value_counts.with_column(probs).unwrap();
+    println!("{:?}", value_counts);
     Ok(df)
 }
 
