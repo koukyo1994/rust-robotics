@@ -38,6 +38,8 @@ fn pipeline() -> Result<DataFrame> {
         .pipe(draw_histogram)
         .expect("could not draw histogram")
         .pipe(calculate_statistics)
+        .unwrap()
+        .pipe(draw_histogram_with_mean_line)
 }
 
 fn draw_histogram(df: DataFrame) -> Result<DataFrame> {
@@ -87,6 +89,57 @@ fn calculate_statistics(df: DataFrame) -> Result<DataFrame> {
     Ok(df)
 }
 
+fn draw_histogram_with_mean_line(df: DataFrame) -> Result<DataFrame> {
+    let root = BitMapBackend::new("lidar_200_histogram_with_mean_line.png", (640, 480))
+        .into_drawing_area();
+
+    root.fill(&WHITE).unwrap();
+
+    let lidar = df.column("lidar").expect("could not find `lidar` column");
+    let lidar_max: i64 = lidar.max().expect("cannot take max operation");
+    let lidar_min: i64 = lidar.min().expect("cannot take min operation");
+    let lidar_mean: f64 = lidar.mean().unwrap();
+
+    let mut chart = ChartBuilder::on(&root)
+        .x_label_area_size(35)
+        .y_label_area_size(40)
+        .margin(5)
+        .caption("Lidar Histogram", ("sans-serif", 30))
+        .build_cartesian_2d(
+            ((lidar_min as f64)..(lidar_max as f64))
+                .step(0.1)
+                .use_round(),
+            0i64..5000i64,
+        )
+        .unwrap()
+        .set_secondary_coord((lidar_min..lidar_max).into_segmented(), 0i64..5000i64);
+
+    chart
+        .configure_mesh()
+        .bold_line_style(&WHITE.mix(0.3))
+        .y_desc("Count")
+        .x_desc("Lidar")
+        .axis_desc_style(("sans-serif", 15))
+        .draw()
+        .expect("could not draw chart");
+
+    chart
+        .draw_secondary_series(
+            Histogram::vertical(chart.borrow_secondary())
+                .style(YELLOW.mix(0.8).filled())
+                .data(lidar.i64().unwrap().into_iter().map(|x| (x.unwrap(), 1))),
+        )
+        .expect("could not draw series");
+
+    let mean_line = LineSeries::new((0i64..5000i64).map(|x| (lidar_mean, x)), &RED);
+
+    chart
+        .draw_series(mean_line)
+        .expect("could not draw mean line");
+
+    Ok(df)
+}
+
 fn main() {
-    let _df = pipeline().expect("could not prepare DataFrame");
+    let _df = pipeline().unwrap();
 }
