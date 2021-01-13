@@ -1,5 +1,7 @@
 use plotters::prelude::*;
 use polars::prelude::*;
+use rand::distributions::WeightedIndex;
+use rand::prelude::*;
 use std::fs::File;
 
 fn read_txt() -> Result<DataFrame> {
@@ -183,7 +185,31 @@ fn to_probability(df: DataFrame) -> Result<DataFrame> {
     probs.rename("probs");
 
     value_counts = value_counts.with_column(probs).unwrap();
+
+    let lidar_vec = value_counts
+        .column("lidar")
+        .unwrap()
+        .i64()
+        .unwrap()
+        .into_iter()
+        .map(|opt_x| opt_x.unwrap())
+        .collect::<Vec<i64>>();
+
+    let prob_vec = value_counts
+        .column("probs")
+        .unwrap()
+        .f64()
+        .unwrap()
+        .into_iter()
+        .map(|opt_x| opt_x.unwrap())
+        .collect::<Vec<f64>>();
+
+    let dist = WeightedIndex::new(&prob_vec).unwrap();
+    let mut rng = thread_rng();
+    let drawn = lidar_vec[dist.sample(&mut rng)];
+
     println!("{:?}", value_counts);
+    println!("drawn {}", drawn);
     Ok(df)
 }
 
