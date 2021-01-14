@@ -2,6 +2,7 @@ use plotters::prelude::*;
 use polars::prelude::*;
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
+use statrs::function::erf;
 use std::fs::File;
 
 fn read_txt() -> Result<DataFrame> {
@@ -289,7 +290,44 @@ fn plot_gaussian_pdf(from: i64, to: i64, mu: f64, dev: f64) {
         .unwrap();
 }
 
+fn gaussian_cdf(z: f64, mu: f64, dev: f64) -> f64 {
+    0.5 * (1.0 + erf::erf((z - mu) / (2.0 * dev).sqrt()))
+}
+
+fn plot_gaussian_cdf(from: i64, to: i64, mu: f64, dev: f64) {
+    let points = (from..to)
+        .map(|x| gaussian_cdf(x as f64, mu, dev))
+        .collect::<Vec<f64>>();
+
+    let root = BitMapBackend::new("gaussian_cdf.png", (640, 480)).into_drawing_area();
+
+    root.fill(&WHITE).unwrap();
+
+    let mut chart = ChartBuilder::on(&root)
+        .x_label_area_size(35)
+        .y_label_area_size(40)
+        .margin(5)
+        .caption("Gaussian CDF", ("sans-serif", 30))
+        .build_cartesian_2d(from..to, 0f64..1.0f64)
+        .unwrap();
+
+    chart
+        .configure_mesh()
+        .disable_x_mesh()
+        .disable_y_mesh()
+        .draw()
+        .unwrap();
+
+    chart
+        .draw_series(LineSeries::new(
+            (from..to).zip(points.iter()).map(|(y, z)| (y, *z)),
+            &RED,
+        ))
+        .unwrap();
+}
+
 fn main() {
     let _df = pipeline().unwrap();
     plot_gaussian_pdf(190, 230, 209.7f64, 23.4f64);
+    plot_gaussian_cdf(190, 230, 209.7f64, 23.4f64);
 }
