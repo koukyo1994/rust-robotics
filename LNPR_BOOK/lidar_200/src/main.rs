@@ -326,8 +326,19 @@ fn plot_gaussian_cdf(from: i64, to: i64, mu: f64, dev: f64) {
         .unwrap();
 }
 
+fn dice_expectation() {
+    let choice = [1, 2, 3, 4, 5, 6];
+    let probs = [1, 1, 1, 1, 1, 1];
+    let dist = WeightedIndex::new(&probs).unwrap();
+    let mut rng = thread_rng();
+    let sum_samples: i32 = (0..10000).map(|_x| choice[dist.sample(&mut rng)]).sum();
+    let expectation = (sum_samples as f32) / 10000.0;
+    println!("{}", expectation);
+}
+
 fn main() {
     let _df = pipeline().unwrap();
     plot_gaussian_pdf(190, 230, 209.7f64, 23.4f64);
     plot_gaussian_cdf(190, 230, 209.7f64, 23.4f64);
+    dice_expectation();
 }
