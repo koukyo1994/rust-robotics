@@ -186,7 +186,15 @@ fn to_probability(df: DataFrame) -> Result<DataFrame> {
 
     value_counts = value_counts.with_column(probs).unwrap();
 
-    let lidar_vec = value_counts
+    let sampled = draw_from_probs(&value_counts, lidar.len() as i64);
+    draw_histogram_given_series(&sampled, "lidar_200_sampled_histogram.png");
+
+    println!("{:?}", value_counts);
+    Ok(df)
+}
+
+fn draw_from_probs(df: &DataFrame, n: i64) -> Series {
+    let lidar_vec: Vec<i64> = df
         .column("lidar")
         .unwrap()
         .i64()
@@ -195,7 +203,7 @@ fn to_probability(df: DataFrame) -> Result<DataFrame> {
         .map(|opt_x| opt_x.unwrap())
         .collect::<Vec<i64>>();
 
-    let prob_vec = value_counts
+    let probs_vec: Vec<f64> = df
         .column("probs")
         .unwrap()
         .f64()
@@ -204,15 +212,84 @@ fn to_probability(df: DataFrame) -> Result<DataFrame> {
         .map(|opt_x| opt_x.unwrap())
         .collect::<Vec<f64>>();
 
-    let dist = WeightedIndex::new(&prob_vec).unwrap();
+    let dist = WeightedIndex::new(&probs_vec).unwrap();
     let mut rng = thread_rng();
-    let drawn = lidar_vec[dist.sample(&mut rng)];
+    (0i64..n)
+        .map(|_x| lidar_vec[dist.sample(&mut rng)])
+        .collect()
+}
 
-    println!("{:?}", value_counts);
-    println!("drawn {}", drawn);
-    Ok(df)
+fn draw_histogram_given_series(series: &Series, name: &str) {
+    let root = BitMapBackend::new(name, (640, 480)).into_drawing_area();
+
+    root.fill(&WHITE).expect("Failed to fill histogram");
+
+    let _max: i64 = series.max().expect("cannot take max operation");
+    let _min: i64 = series.min().expect("cannot take min operation");
+
+    let mut chart = ChartBuilder::on(&root)
+        .x_label_area_size(35)
+        .y_label_area_size(40)
+        .margin(5)
+        .caption("Lidar Histogram", ("sans-serif", 30))
+        .build_cartesian_2d((_min.._max).into_segmented(), 0i64..5000i64)
+        .expect("could not prepare chart");
+
+    chart
+        .configure_mesh()
+        .bold_line_style(&WHITE.mix(0.3))
+        .y_desc("Count")
+        .x_desc("Lidar")
+        .axis_desc_style(("sans-serif", 15))
+        .draw()
+        .expect("could not draw chart");
+
+    chart
+        .draw_series(
+            Histogram::vertical(&chart)
+                .style(YELLOW.mix(0.5).filled())
+                .data(series.i64().unwrap().into_iter().map(|x| (x.unwrap(), 1))),
+        )
+        .expect("could not draw series");
+}
+
+fn gaussian_pdf(z: f64, mu: f64, dev: f64) -> f64 {
+    (-(z - mu).powi(2) / (2.0 * dev)).exp() / (2.0 * std::f64::consts::PI * dev).sqrt()
+}
+
+fn plot_gaussian_pdf(from: i64, to: i64, mu: f64, dev: f64) {
+    let points = (from..to)
+        .map(|x| gaussian_pdf(x as f64, mu, dev))
+        .collect::<Vec<f64>>();
+
+    let root = BitMapBackend::new("gaussian_pdf.png", (640, 480)).into_drawing_area();
+
+    root.fill(&WHITE).unwrap();
+
+    let mut chart = ChartBuilder::on(&root)
+        .x_label_area_size(35)
+        .y_label_area_size(40)
+        .margin(5)
+        .caption("Gaussian PDF", ("sans-serif", 30))
+        .build_cartesian_2d(from..to, 0f64..0.1f64)
+        .unwrap();
+
+    chart
+        .configure_mesh()
+        .disable_x_mesh()
+        .disable_y_mesh()
+        .draw()
+        .unwrap();
+
+    chart
+        .draw_series(LineSeries::new(
+            (from..to).zip(points.iter()).map(|(y, z)| (y, *z)),
+            &BLUE,
+        ))
+        .unwrap();
 }
 
 fn main() {
     let _df = pipeline().unwrap();
+    plot_gaussian_pdf(190, 230, 209.7f64, 23.4f64);
 }
