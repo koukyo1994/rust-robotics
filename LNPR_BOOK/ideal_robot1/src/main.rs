@@ -12,34 +12,71 @@ struct IdealRobot {
 
 struct World {
     objects: Vec<IdealRobot>,
+    debug: bool,
 }
 
 impl World {
     fn draw(self, drawing_area: &DrawingArea<BitMapBackend, Shift>) {
-        drawing_area.fill(&WHITE).unwrap();
+        if self.debug {
+            drawing_area.fill(&WHITE).unwrap();
 
-        let mut chart = ChartBuilder::on(drawing_area)
-            .x_label_area_size(40)
-            .y_label_area_size(40)
-            .margin(5)
-            .build_cartesian_2d(-5..5, -5..5)
-            .unwrap();
+            let mut chart = ChartBuilder::on(drawing_area)
+                .x_label_area_size(40)
+                .y_label_area_size(40)
+                .margin(5)
+                .build_cartesian_2d(-5..5, -5..5)
+                .unwrap();
 
-        chart
-            .configure_mesh()
-            .disable_x_mesh()
-            .disable_y_mesh()
-            .x_desc("X")
-            .y_desc("Y")
-            .axis_desc_style(("sans-serif", 15))
-            .draw()
-            .unwrap();
+            chart
+                .configure_mesh()
+                .disable_x_mesh()
+                .disable_y_mesh()
+                .x_desc("X")
+                .y_desc("Y")
+                .axis_desc_style(("sans-serif", 15))
+                .draw()
+                .unwrap();
 
-        let plotting_area = chart.plotting_area();
+            let plotting_area = chart.plotting_area();
 
-        self.objects
-            .iter()
-            .for_each(|r| r.clone().draw(plotting_area));
+            self.objects
+                .iter()
+                .for_each(|r| r.clone().draw(plotting_area));
+        } else {
+            for i in 0..10 {
+                drawing_area.fill(&WHITE).unwrap();
+
+                let mut chart = ChartBuilder::on(drawing_area)
+                    .x_label_area_size(40)
+                    .y_label_area_size(40)
+                    .margin(5)
+                    .build_cartesian_2d(-5..5, -5..5)
+                    .unwrap();
+
+                chart
+                    .configure_mesh()
+                    .disable_mesh()
+                    .x_desc("X")
+                    .y_desc("Y")
+                    .axis_desc_style(("sans-serif", 15))
+                    .draw()
+                    .unwrap();
+
+                self.one_step(i, chart.plotting_area());
+            }
+        }
+    }
+
+    fn one_step<X: Ranged, Y: Ranged>(
+        self,
+        i: i32,
+        drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
+    ) {
+        drawing_area.strip_coord_spec().draw(&Text::new(
+            format!("t={}", i),
+            (50, 50),
+            ("sans-serif", 15),
+        ));
     }
 }
 
@@ -126,7 +163,10 @@ impl IdealRobot {
 
 fn main() {
     let objects = Vec::new();
-    let mut world = World { objects };
+    let mut world = World {
+        objects: objects,
+        debug: false,
+    };
 
     let robot1 = IdealRobot {
         pose: (2.0, 3.0, PI / 6.0),
@@ -140,6 +180,8 @@ fn main() {
     world.objects.push(robot1);
     world.objects.push(robot2);
 
-    let root = BitMapBackend::new("world.png", (500, 500)).into_drawing_area();
+    let root = BitMapBackend::gif("world.gif", (500, 500), 1000)
+        .unwrap()
+        .into_drawing_area();
     world.draw(&root);
 }
