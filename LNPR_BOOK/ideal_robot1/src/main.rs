@@ -8,6 +8,7 @@ use plotters::prelude::*;
 struct IdealRobot {
     pose: (f32, f32, f32),
     color: String,
+    agent: Agent,
 }
 
 struct World {
@@ -15,8 +16,20 @@ struct World {
     debug: bool,
 }
 
+#[derive(Clone)]
+struct Agent {
+    nu: f32,
+    omega: f32,
+}
+
+impl Agent {
+    fn decision(&self) -> (f32, f32) {
+        (self.nu, self.omega)
+    }
+}
+
 impl World {
-    fn draw(self, drawing_area: &DrawingArea<BitMapBackend, Shift>) {
+    fn draw(mut self, drawing_area: &DrawingArea<BitMapBackend, Shift>) {
         if self.debug {
             drawing_area.fill(&WHITE).unwrap();
 
@@ -62,21 +75,34 @@ impl World {
                     .draw()
                     .unwrap();
 
-                self.one_step(i, chart.plotting_area());
+                let plotting_area = chart.plotting_area();
+
+                self.one_step(i, &plotting_area);
+                self.objects
+                    .iter()
+                    .for_each(|r| r.clone().draw(plotting_area));
+
+                drawing_area.present().unwrap();
             }
         }
     }
 
     fn one_step<X: Ranged, Y: Ranged>(
-        self,
+        &mut self,
         i: i32,
         drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
     ) {
-        drawing_area.strip_coord_spec().draw(&Text::new(
-            format!("t={}", i),
-            (50, 50),
-            ("sans-serif", 15),
-        ));
+        drawing_area
+            .strip_coord_spec()
+            .draw(&Text::new(format!("t={}", i), (50, 50), ("sans-serif", 15)))
+            .unwrap();
+
+        let objects = self
+            .objects
+            .iter()
+            .map(|r| r.clone().one_step(1.0))
+            .collect::<Vec<IdealRobot>>();
+        self.objects = objects;
     }
 }
 
@@ -105,25 +131,20 @@ impl IdealRobot {
         });
 
         let color = colormap.get(&self.color).unwrap();
+        let coord_spec = drawing_area.strip_coord_spec();
 
         if direction_x_end > x {
             if direction_y_end > y {
                 (x..direction_x_end)
                     .zip(y..direction_y_end)
                     .for_each(|(x_, y_)| {
-                        drawing_area
-                            .strip_coord_spec()
-                            .draw_pixel((x_, y_), *color)
-                            .unwrap();
+                        coord_spec.draw_pixel((x_, y_), *color).unwrap();
                     });
             } else {
                 (x..direction_x_end)
                     .zip((direction_y_end..y).rev())
                     .for_each(|(x_, y_)| {
-                        drawing_area
-                            .strip_coord_spec()
-                            .draw_pixel((x_, y_), *color)
-                            .unwrap();
+                        coord_spec.draw_pixel((x_, y_), *color).unwrap();
                     });
             }
         } else {
@@ -132,32 +153,44 @@ impl IdealRobot {
                     .rev()
                     .zip(y..direction_y_end)
                     .for_each(|(x_, y_)| {
-                        drawing_area
-                            .strip_coord_spec()
-                            .draw_pixel((x_, y_), *color)
-                            .unwrap();
+                        coord_spec.draw_pixel((x_, y_), *color).unwrap();
                     });
             } else {
                 (direction_x_end..x)
                     .rev()
                     .zip((y..direction_y_end).rev())
                     .for_each(|(x_, y_)| {
-                        drawing_area
-                            .strip_coord_spec()
-                            .draw_pixel((x_, y_), *color)
-                            .unwrap();
+                        coord_spec.draw_pixel((x_, y_), *color).unwrap();
                     });
             }
         }
 
-        drawing_area
-            .strip_coord_spec()
+        coord_spec
             .draw(&Circle::new(
                 (x, y),
                 round,
                 Into::<ShapeStyle>::into(*color),
             ))
             .unwrap();
+    }
+
+    fn state_transition(&mut self, nu: f32, omega: f32, time: f32) {
+        let theta = self.pose.2;
+        if omega.abs() < 1e-10 {
+            self.pose.0 += nu * theta.cos() * time;
+            self.pose.1 += nu * theta.sin() * time;
+            self.pose.2 += omega * time;
+        } else {
+            self.pose.0 += nu / omega * ((theta + omega * time).sin() - theta.sin());
+            self.pose.1 += nu / omega * (-(theta + omega * time).cos() + theta.cos());
+            self.pose.2 += omega * time;
+        }
+    }
+
+    fn one_step(mut self, time_interval: f32) -> IdealRobot {
+        let (nu, omega) = self.agent.decision();
+        self.state_transition(nu, omega, time_interval);
+        self
     }
 }
 
@@ -168,17 +201,38 @@ fn main() {
         debug: false,
     };
 
+    let straight = Agent {
+        nu: 0.2,
+        omega: 0.0,
+    };
+    let circle = Agent {
+        nu: 0.2,
+        omega: 10.0 / 180.0 * PI,
+    };
+    let still = Agent {
+        nu: 0.0,
+        omega: 0.0,
+    };
+
     let robot1 = IdealRobot {
         pose: (2.0, 3.0, PI / 6.0),
         color: String::from("black"),
+        agent: straight,
     };
     let robot2 = IdealRobot {
         pose: (-2.0, -1.0, (PI / 5.0) * 6.0),
         color: String::from("red"),
+        agent: circle,
+    };
+    let robot3 = IdealRobot {
+        pose: (0.0, 0.0, 0.0),
+        color: String::from("blue"),
+        agent: still,
     };
 
     world.objects.push(robot1);
     world.objects.push(robot2);
+    world.objects.push(robot3);
 
     let root = BitMapBackend::gif("world.gif", (500, 500), 1000)
         .unwrap()
