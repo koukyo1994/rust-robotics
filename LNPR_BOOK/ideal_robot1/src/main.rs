@@ -12,6 +12,7 @@ struct IdealRobot {
     color: String,
     agent: Agent,
     sensor: IdealCamera,
+    poses: Vec<(f32, f32, f32)>,
 }
 
 struct World {
@@ -45,7 +46,7 @@ struct IdealCamera {
 }
 
 impl Agent {
-    fn decision(&self, obs: &Vec<(f32, f32)>) -> (f32, f32) {
+    fn decision(&self, _obs: &Vec<(f32, f32)>) -> (f32, f32) {
         (self.nu, self.omega)
     }
 }
@@ -154,7 +155,7 @@ impl Map {
 
 impl IdealRobot {
     fn draw<X: Ranged, Y: Ranged>(
-        self,
+        &mut self,
         drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
     ) {
         let (x0, y0) = drawing_area.get_base_pixel();
@@ -194,7 +195,8 @@ impl IdealRobot {
             ))
             .unwrap();
 
-        self.sensor.draw(self.pose, drawing_area);
+        self.sensor
+            .draw(self.poses[self.poses.len() - 2], drawing_area);
     }
 
     fn draw_line<C: Color>(
@@ -254,6 +256,7 @@ impl IdealRobot {
         let obs = self.sensor.data(self.pose);
         let (nu, omega) = self.agent.decision(obs);
         self.state_transition(nu, omega, time_interval);
+        self.poses.push(self.pose);
         self
     }
 }
@@ -353,7 +356,7 @@ impl IdealCamera {
 
 fn main() {
     let time_span = 10.0;
-    let time_interval = 1.0;
+    let time_interval = 0.1;
 
     let landmarks = Vec::new();
     let objects = Vec::new();
@@ -390,6 +393,7 @@ fn main() {
             map: map.clone(),
             lastdata: Vec::new(),
         },
+        poses: vec![(2.0, 3.0, PI / 6.0)],
     };
     let robot2 = IdealRobot {
         pose: (-2.0, -1.0, (PI / 5.0) * 6.0),
@@ -399,6 +403,7 @@ fn main() {
             map: map.clone(),
             lastdata: Vec::new(),
         },
+        poses: vec![(-2.0, -1.0, (PI / 5.0) * 6.0)],
     };
 
     world.objects.push(robot1);
