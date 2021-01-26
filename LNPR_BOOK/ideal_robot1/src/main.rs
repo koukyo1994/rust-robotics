@@ -43,6 +43,8 @@ struct Map {
 struct IdealCamera {
     map: Map,
     lastdata: Vec<(f32, f32)>,
+    distance_range: (f32, f32),
+    direction_range: (f32, f32),
 }
 
 impl Agent {
@@ -268,10 +270,18 @@ impl IdealCamera {
             .landmarks
             .iter()
             .map(|l| Self::obs_fn(cam_pose, l.clone().position))
+            .filter(|pos| self.visible(*pos))
             .collect::<Vec<(f32, f32)>>();
 
         self.lastdata = observed;
         &self.lastdata
+    }
+
+    fn visible(&self, pos: (f32, f32)) -> bool {
+        self.distance_range.0 <= pos.0
+            && pos.0 <= self.distance_range.1
+            && self.direction_range.0 <= pos.1
+            && pos.1 <= self.direction_range.1
     }
 
     fn obs_fn(cam_pose: (f32, f32, f32), obj_pos: (f32, f32)) -> (f32, f32) {
@@ -392,6 +402,8 @@ fn main() {
         sensor: IdealCamera {
             map: map.clone(),
             lastdata: Vec::new(),
+            distance_range: (0.5, 6.0),
+            direction_range: (-PI / 3.0, PI / 3.0),
         },
         poses: vec![(2.0, 3.0, PI / 6.0)],
     };
@@ -402,6 +414,8 @@ fn main() {
         sensor: IdealCamera {
             map: map.clone(),
             lastdata: Vec::new(),
+            distance_range: (0.5, 6.0),
+            direction_range: (-PI / 3.0, PI / 3.0),
         },
         poses: vec![(-2.0, -1.0, (PI / 5.0) * 6.0)],
     };
