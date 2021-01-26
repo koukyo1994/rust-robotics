@@ -4,10 +4,10 @@ use std::f32::consts::PI;
 use plotters::coord::Shift;
 use plotters::prelude::*;
 
-type BackendCoord = (i32, i32);
+pub type BackendCoord = (i32, i32);
 
 #[derive(Clone)]
-struct IdealRobot {
+pub struct IdealRobot {
     pose: (f32, f32, f32),
     color: String,
     agent: Agent,
@@ -15,7 +15,7 @@ struct IdealRobot {
     poses: Vec<(f32, f32, f32)>,
 }
 
-struct World {
+pub struct World {
     objects: Vec<IdealRobot>,
     map: Map,
     time_span: f32,
@@ -23,24 +23,24 @@ struct World {
 }
 
 #[derive(Clone)]
-struct Agent {
+pub struct Agent {
     nu: f32,
     omega: f32,
 }
 
 #[derive(Clone)]
-struct Landmark {
+pub struct Landmark {
     position: (f32, f32),
     id: i32,
 }
 
 #[derive(Clone)]
-struct Map {
+pub struct Map {
     landmarks: Vec<Landmark>,
 }
 
 #[derive(Clone)]
-struct IdealCamera {
+pub struct IdealCamera {
     map: Map,
     lastdata: Vec<(f32, f32)>,
     distance_range: (f32, f32),
@@ -48,13 +48,13 @@ struct IdealCamera {
 }
 
 impl Agent {
-    fn decision(&self, _obs: &Vec<(f32, f32)>) -> (f32, f32) {
+    pub fn decision(&self, _obs: &Vec<(f32, f32)>) -> (f32, f32) {
         (self.nu, self.omega)
     }
 }
 
 impl World {
-    fn draw(mut self, drawing_area: &DrawingArea<BitMapBackend, Shift>) {
+    pub fn draw(mut self, drawing_area: &DrawingArea<BitMapBackend, Shift>) {
         let max_iteration = (self.time_span / self.time_interval) as i32;
         for i in 0..max_iteration {
             drawing_area.fill(&WHITE).unwrap();
@@ -88,7 +88,7 @@ impl World {
         }
     }
 
-    fn one_step<X: Ranged, Y: Ranged>(
+    pub fn one_step<X: Ranged, Y: Ranged>(
         &mut self,
         i: f32,
         drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
@@ -112,7 +112,7 @@ impl World {
 }
 
 impl Landmark {
-    fn draw<X: Ranged, Y: Ranged>(
+    pub fn draw<X: Ranged, Y: Ranged>(
         &self,
         drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
     ) {
@@ -137,7 +137,7 @@ impl Landmark {
 }
 
 impl Map {
-    fn draw<X: Ranged, Y: Ranged>(
+    pub fn draw<X: Ranged, Y: Ranged>(
         &self,
         drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
     ) {
@@ -146,7 +146,7 @@ impl Map {
             .for_each(|l| l.clone().draw(drawing_area));
     }
 
-    fn append_landmark(&mut self, position: (f32, f32)) {
+    pub fn append_landmark(&mut self, position: (f32, f32)) {
         let id = self.landmarks.len() as i32;
         self.landmarks.push(Landmark {
             position: position,
@@ -155,8 +155,20 @@ impl Map {
     }
 }
 
-impl IdealRobot {
+pub trait Robotize {
+    fn new(pose: (f32, f32, f32), color: String, agent: Agent, sensor: IdealCamera) -> Self;
     fn draw<X: Ranged, Y: Ranged>(
+        &mut self,
+        drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
+    ) {
+        let (x0, y0) = drawing_area.get_base_pixel();
+
+        let x = ((self.pose.0 * 50.0 + 250.0) * (()))
+    }
+}
+
+impl IdealRobot {
+    pub fn draw<X: Ranged, Y: Ranged>(
         &mut self,
         drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
     ) {
@@ -241,7 +253,7 @@ impl IdealRobot {
         }
     }
 
-    fn state_transition(&mut self, nu: f32, omega: f32, time: f32) {
+    pub fn state_transition(&mut self, nu: f32, omega: f32, time: f32) {
         let theta = self.pose.2;
         if omega.abs() < 1e-10 {
             self.pose.0 += nu * theta.cos() * time;
@@ -254,7 +266,7 @@ impl IdealRobot {
         }
     }
 
-    fn one_step(mut self, time_interval: f32) -> IdealRobot {
+    pub fn one_step(mut self, time_interval: f32) -> IdealRobot {
         let obs = self.sensor.data(self.pose);
         let (nu, omega) = self.agent.decision(obs);
         self.state_transition(nu, omega, time_interval);
@@ -264,7 +276,7 @@ impl IdealRobot {
 }
 
 impl IdealCamera {
-    fn data(&mut self, cam_pose: (f32, f32, f32)) -> &Vec<(f32, f32)> {
+    pub fn data(&mut self, cam_pose: (f32, f32, f32)) -> &Vec<(f32, f32)> {
         let observed = self
             .map
             .landmarks
@@ -277,14 +289,14 @@ impl IdealCamera {
         &self.lastdata
     }
 
-    fn visible(&self, pos: (f32, f32)) -> bool {
+    pub fn visible(&self, pos: (f32, f32)) -> bool {
         self.distance_range.0 <= pos.0
             && pos.0 <= self.distance_range.1
             && self.direction_range.0 <= pos.1
             && pos.1 <= self.direction_range.1
     }
 
-    fn obs_fn(cam_pose: (f32, f32, f32), obj_pos: (f32, f32)) -> (f32, f32) {
+    pub fn obs_fn(cam_pose: (f32, f32, f32), obj_pos: (f32, f32)) -> (f32, f32) {
         let diff = (obj_pos.0 - cam_pose.0, obj_pos.1 - cam_pose.1);
         let mut phi = diff.1.atan2(diff.0) - cam_pose.2;
         while phi >= PI {
@@ -299,7 +311,7 @@ impl IdealCamera {
         (distance, phi)
     }
 
-    fn draw<X: Ranged, Y: Ranged>(
+    pub fn draw<X: Ranged, Y: Ranged>(
         &self,
         cam_pose: (f32, f32, f32),
         drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
@@ -323,7 +335,7 @@ impl IdealCamera {
         });
     }
 
-    fn draw_line<C: Color>(
+    pub fn draw_line<C: Color>(
         &self,
         drawing_area: &DrawingArea<BitMapBackend, Shift>,
         mut from: BackendCoord,
