@@ -7,16 +7,16 @@ use plotters::prelude::*;
 pub type BackendCoord = (i32, i32);
 
 #[derive(Clone)]
-pub struct IdealRobot {
+pub struct IdealRobot<T: AgentTrait, U: OpticalSensor> {
     pose: (f32, f32, f32),
     color: String,
-    agent: Agent,
-    sensor: IdealCamera,
+    agent: T,
+    sensor: U,
     poses: Vec<(f32, f32, f32)>,
 }
 
-pub struct World {
-    objects: Vec<IdealRobot>,
+pub struct World<T: Robotize<AT: AgentTrait, OS: OpticalSensor>> {
+    objects: Vec<T>,
     map: Map,
     time_span: f32,
     time_interval: f32,
@@ -47,13 +47,56 @@ pub struct IdealCamera {
     direction_range: (f32, f32),
 }
 
-impl Agent {
-    pub fn decision(&self, _obs: &Vec<(f32, f32)>) -> (f32, f32) {
+fn draw_line<C: Color>(
+    drawing_area: &DrawingArea<BitMapBackend, Shift>,
+    mut from: BackendCoord,
+    mut to: BackendCoord,
+    color: &C,
+) {
+    let steep = (from.0 - to.0).abs() < (from.1 - to.1).abs();
+
+    if steep {
+        from = (from.1, from.0);
+        to = (to.1, to.0);
+    }
+
+    let (from, to) = if from.0 > to.0 {
+        (to, from)
+    } else {
+        (from, to)
+    };
+
+    let grad = (to.1 - from.1) as f64 / (to.0 - from.0) as f64;
+
+    let put_pixel = |(x, y): BackendCoord, b: f64| {
+        if steep {
+            return drawing_area.draw_pixel((y, x), &color.mix(b));
+        } else {
+            return drawing_area.draw_pixel((x, y), &color.mix(b));
+        }
+    };
+
+    let mut y = from.1 as f64;
+
+    for x in from.0..=to.0 {
+        put_pixel((x, y as i32), 1.0 + y.floor() - y).unwrap();
+        put_pixel((x, y as i32 + 1), y - y.floor()).unwrap();
+
+        y += grad;
+    }
+}
+
+trait AgentTrait {
+    fn decision(&self, obs: &Vec<(f32, f32)>) -> (f32, f32);
+}
+
+impl AgentTrait for Agent {
+    fn decision(&self, _obs: &Vec<(f32, f32)>) -> (f32, f32) {
         (self.nu, self.omega)
     }
 }
 
-impl World {
+impl<T: Robotize<AT: AgentTrait, OS: OpticalSensor>> World<T> {
     pub fn draw(mut self, drawing_area: &DrawingArea<BitMapBackend, Shift>) {
         let max_iteration = (self.time_span / self.time_interval) as i32;
         for i in 0..max_iteration {
@@ -106,7 +149,7 @@ impl World {
             .objects
             .iter()
             .map(|r| r.clone().one_step(self.time_interval))
-            .collect::<Vec<IdealRobot>>();
+            .collect::<Vec<T>>();
         self.objects = objects;
     }
 }
@@ -155,31 +198,33 @@ impl Map {
     }
 }
 
-pub trait Robotize {
-    fn new(pose: (f32, f32, f32), color: String, agent: Agent, sensor: IdealCamera) -> Self;
+pub trait Robotize<AT: AgentTrait, OS: OpticalSensor> {
+    fn new(pose: (f32, f32, f32), color: String, agent: AT, sensor: OS) -> Self;
+
+    fn pose(&self) -> (f32, f32, f32);
+
+    fn color(&self) -> String;
+
+    fn sensor(&self) -> OS;
+
+    fn poses(&self) -> Vec<(f32, f32, f32)>;
+
+    fn agent(&self) -> AT;
+
+    fn state_transition(&mut self, nu: f32, omega: f32, time: f32);
+
     fn draw<X: Ranged, Y: Ranged>(
         &mut self,
         drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
     ) {
         let (x0, y0) = drawing_area.get_base_pixel();
 
-        let x = ((self.pose.0 * 50.0 + 250.0) * (()))
-    }
-}
-
-impl IdealRobot {
-    pub fn draw<X: Ranged, Y: Ranged>(
-        &mut self,
-        drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
-    ) {
-        let (x0, y0) = drawing_area.get_base_pixel();
-
-        let x = ((self.pose.0 * 50.0 + 250.0) * ((500 - x0 - y0) as f32) / 500.0) as i32;
-        let y = ((-(self.pose.1) * 50.0 + 250.0) * ((500 - x0 - y0) as f32) / 500.0) as i32;
+        let x = ((self.pose().0 * 50.0 + 250.0) * ((500 - x0 - y0) as f32) / 500.0) as i32;
+        let y = ((-(self.pose().1) * 50.0 + 250.0) * ((500 - x0 - y0) as f32) / 500.0) as i32;
         let round = 10;
 
-        let direction_x_end = x + (((round as f32) * self.pose.2.cos()) as i32);
-        let direction_y_end = y + (((round as f32) * -self.pose.2.sin()) as i32);
+        let direction_x_end = x + (((round as f32) * self.pose().2.cos()) as i32);
+        let direction_y_end = y + (((round as f32) * -self.pose().2.sin()) as i32);
 
         let mut colormap: HashMap<String, &RGBColor> = HashMap::new();
         let color_literals = [
@@ -191,10 +236,10 @@ impl IdealRobot {
             colormap.insert(String::from(*literal), &color_codes[i]);
         });
 
-        let color = colormap.get(&self.color).unwrap();
+        let color = colormap.get(&self.color()).unwrap();
         let coord_spec = drawing_area.strip_coord_spec();
 
-        self.draw_line(
+        draw_line(
             &coord_spec,
             (x, y),
             (direction_x_end, direction_y_end),
@@ -209,51 +254,54 @@ impl IdealRobot {
             ))
             .unwrap();
 
+        self.sensor::<OS>()
+            .draw(self.poses()[self.poses().len() - 2], drawing_area);
+    }
+
+    fn one_step(mut self, time_interval: f32) -> Self
+    where
+        Self: Sized,
+    {
+        let obs = self.sensor().data(self.pose());
+        let (nu, omega) = self.agent().decision(obs);
+        self.state_transition(nu, omega, time_interval);
+        self.poses().push(self.pose());
+        self
+    }
+}
+
+impl<AT: AgentTrait, OS: OpticalSensor> Robotize<AT, OS> for IdealRobot<AT, OS> {
+    fn new(pose: (f32, f32, f32), color: String, agent: AT, sensor: OS) -> Self {
+        IdealRobot {
+            pose: pose,
+            color: color,
+            agent: agent,
+            sensor: sensor,
+            poses: vec![pose],
+        }
+    }
+
+    fn pose(&self) -> (f32, f32, f32) {
+        self.pose
+    }
+
+    fn color(&self) -> String {
+        self.color
+    }
+
+    fn agent(&self) -> AT {
+        self.agent
+    }
+
+    fn poses(&self) -> Vec<(f32, f32, f32)> {
+        self.poses
+    }
+
+    fn sensor(&self) -> OS {
         self.sensor
-            .draw(self.poses[self.poses.len() - 2], drawing_area);
     }
 
-    fn draw_line<C: Color>(
-        &self,
-        drawing_area: &DrawingArea<BitMapBackend, Shift>,
-        mut from: BackendCoord,
-        mut to: BackendCoord,
-        color: &C,
-    ) {
-        let steep = (from.0 - to.0).abs() < (from.1 - to.1).abs();
-
-        if steep {
-            from = (from.1, from.0);
-            to = (to.1, to.0);
-        }
-
-        let (from, to) = if from.0 > to.0 {
-            (to, from)
-        } else {
-            (from, to)
-        };
-
-        let grad = (to.1 - from.1) as f64 / (to.0 - from.0) as f64;
-
-        let put_pixel = |(x, y): BackendCoord, b: f64| {
-            if steep {
-                return drawing_area.draw_pixel((y, x), &color.mix(b));
-            } else {
-                return drawing_area.draw_pixel((x, y), &color.mix(b));
-            }
-        };
-
-        let mut y = from.1 as f64;
-
-        for x in from.0..=to.0 {
-            put_pixel((x, y as i32), 1.0 + y.floor() - y).unwrap();
-            put_pixel((x, y as i32 + 1), y - y.floor()).unwrap();
-
-            y += grad;
-        }
-    }
-
-    pub fn state_transition(&mut self, nu: f32, omega: f32, time: f32) {
+    fn state_transition(&mut self, nu: f32, omega: f32, time: f32) {
         let theta = self.pose.2;
         if omega.abs() < 1e-10 {
             self.pose.0 += nu * theta.cos() * time;
@@ -265,18 +313,82 @@ impl IdealRobot {
             self.pose.2 += omega * time;
         }
     }
+}
 
-    pub fn one_step(mut self, time_interval: f32) -> IdealRobot {
-        let obs = self.sensor.data(self.pose);
-        let (nu, omega) = self.agent.decision(obs);
-        self.state_transition(nu, omega, time_interval);
-        self.poses.push(self.pose);
-        self
+pub trait OpticalSensor {
+    fn new(map: Map, distance_range: (f32, f32), direction_range: (f32, f32)) -> Self;
+
+    fn map(&self) -> Map;
+
+    fn lastdata(&self) -> Vec<(f32, f32)>;
+
+    fn distance_range(&self) -> (f32, f32);
+
+    fn direction_range(&self) -> (f32, f32);
+
+    fn visible(&self, pos: (f32, f32)) -> bool {
+        self.distance_range().0 <= pos.0
+            && pos.0 <= self.distance_range().1
+            && self.direction_range().0 <= pos.1
+            && pos.1 <= self.direction_range().1
+    }
+
+    fn data(&mut self, cam_pose: (f32, f32, f32)) -> &Vec<(f32, f32)>;
+
+    fn obs_fn(cam_pose: (f32, f32, f32), obj_pos: (f32, f32)) -> (f32, f32);
+
+    fn draw<X: Ranged, Y: Ranged>(
+        &self,
+        cam_pose: (f32, f32, f32),
+        drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
+    ) {
+        let (x0, y0) = drawing_area.get_base_pixel();
+        let (x, y, theta) = cam_pose;
+
+        let x_ = ((x * 50.0 + 250.0) * ((500 - x0 - y0) as f32) / 500.0) as i32;
+        let y_ = ((-y * 50.0 + 250.0) * ((500 - x0 - y0) as f32) / 500.0) as i32;
+
+        let coord_spec = drawing_area.strip_coord_spec();
+        self.lastdata().iter().for_each(|l| {
+            let (distance, direction) = l;
+            let lx = x + distance * (direction + theta).cos();
+            let ly = y + distance * (direction + theta).sin();
+
+            let lx_ = ((lx * 50.0 + 250.0) * ((500 - x0 - y0) as f32) / 500.0) as i32;
+            let ly_ = ((-ly * 50.0 + 250.0) * ((500 - x0 - y0) as f32) / 500.0) as i32;
+
+            draw_line(&coord_spec, (x_, y_), (lx_, ly_), &MAGENTA);
+        });
     }
 }
 
-impl IdealCamera {
-    pub fn data(&mut self, cam_pose: (f32, f32, f32)) -> &Vec<(f32, f32)> {
+impl OpticalSensor for IdealCamera {
+    fn new(map: Map, distance_range: (f32, f32), direction_range: (f32, f32)) -> Self {
+        IdealCamera {
+            map: map,
+            lastdata: Vec::new(),
+            distance_range: distance_range,
+            direction_range: direction_range,
+        }
+    }
+
+    fn map(&self) -> Map {
+        self.map
+    }
+
+    fn lastdata(&self) -> Vec<(f32, f32)> {
+        self.lastdata
+    }
+
+    fn distance_range(&self) -> (f32, f32) {
+        self.distance_range
+    }
+
+    fn direction_range(&self) -> (f32, f32) {
+        self.direction_range
+    }
+
+    fn data(&mut self, cam_pose: (f32, f32, f32)) -> &Vec<(f32, f32)> {
         let observed = self
             .map
             .landmarks
@@ -289,14 +401,7 @@ impl IdealCamera {
         &self.lastdata
     }
 
-    pub fn visible(&self, pos: (f32, f32)) -> bool {
-        self.distance_range.0 <= pos.0
-            && pos.0 <= self.distance_range.1
-            && self.direction_range.0 <= pos.1
-            && pos.1 <= self.direction_range.1
-    }
-
-    pub fn obs_fn(cam_pose: (f32, f32, f32), obj_pos: (f32, f32)) -> (f32, f32) {
+    fn obs_fn(cam_pose: (f32, f32, f32), obj_pos: (f32, f32)) -> (f32, f32) {
         let diff = (obj_pos.0 - cam_pose.0, obj_pos.1 - cam_pose.1);
         let mut phi = diff.1.atan2(diff.0) - cam_pose.2;
         while phi >= PI {
@@ -309,69 +414,5 @@ impl IdealCamera {
 
         let distance = (diff.0.powi(2) + diff.1.powi(2)).sqrt();
         (distance, phi)
-    }
-
-    pub fn draw<X: Ranged, Y: Ranged>(
-        &self,
-        cam_pose: (f32, f32, f32),
-        drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
-    ) {
-        let (x0, y0) = drawing_area.get_base_pixel();
-        let (x, y, theta) = cam_pose;
-
-        let x_ = ((x * 50.0 + 250.0) * ((500 - x0 - y0) as f32) / 500.0) as i32;
-        let y_ = ((-y * 50.0 + 250.0) * ((500 - x0 - y0) as f32) / 500.0) as i32;
-
-        let coord_spec = drawing_area.strip_coord_spec();
-        self.lastdata.iter().for_each(|l| {
-            let (distance, direction) = l;
-            let lx = x + distance * (direction + theta).cos();
-            let ly = y + distance * (direction + theta).sin();
-
-            let lx_ = ((lx * 50.0 + 250.0) * ((500 - x0 - y0) as f32) / 500.0) as i32;
-            let ly_ = ((-ly * 50.0 + 250.0) * ((500 - x0 - y0) as f32) / 500.0) as i32;
-
-            self.draw_line(&coord_spec, (x_, y_), (lx_, ly_), &MAGENTA);
-        });
-    }
-
-    pub fn draw_line<C: Color>(
-        &self,
-        drawing_area: &DrawingArea<BitMapBackend, Shift>,
-        mut from: BackendCoord,
-        mut to: BackendCoord,
-        color: &C,
-    ) {
-        let steep = (from.0 - to.0).abs() < (from.1 - to.1).abs();
-
-        if steep {
-            from = (from.1, from.0);
-            to = (to.1, to.0);
-        }
-
-        let (from, to) = if from.0 > to.0 {
-            (to, from)
-        } else {
-            (from, to)
-        };
-
-        let grad = (to.1 - from.1) as f64 / (to.0 - from.0) as f64;
-
-        let put_pixel = |(x, y): BackendCoord, b: f64| {
-            if steep {
-                return drawing_area.draw_pixel((y, x), &color.mix(b));
-            } else {
-                return drawing_area.draw_pixel((x, y), &color.mix(b));
-            }
-        };
-
-        let mut y = from.1 as f64;
-
-        for x in from.0..=to.0 {
-            put_pixel((x, y as i32), 1.0 + y.floor() - y).unwrap();
-            put_pixel((x, y as i32 + 1), y - y.floor()).unwrap();
-
-            y += grad;
-        }
     }
 }
