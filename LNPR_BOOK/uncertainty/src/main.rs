@@ -1,56 +1,34 @@
-use std::f32::consts::PI;
 use plotters::prelude::*;
-
-extern crate scripts;
+use scripts::*;
+use std::f32::consts::PI;
 
 fn main() {
     let time_span = 10.0;
-    let time_interval = 1.0;
+    let time_interval = 0.1;
 
-    let landmarks = Vec::new();
-    let objects = Vec::new();
-
-    let mut map = scripts::Map {
-        landmarks: landmarks,
-    };
+    let mut map = Map::new();
 
     map.append_landmark((2.0, -2.0));
     map.append_landmark((-1.0, -3.0));
     map.append_landmark((3.0, 3.0));
 
-    let mut world = scirpts::World {
-        map: map.clone(),
-        objects: objects,
-        time_span: time_span,
-        time_interval: time_interval,
-    };
+    let camera = IdealCamera::new(map.clone(), (0.5, 6.0), (-PI / 3.0, PI / 3.0));
 
-    let straight = scripts::Agent {
+    let straight = Agent {
         nu: 0.2,
         omega: 0.0,
     };
-
-    let circle = scripts::Agent {
+    let circle = Agent {
         nu: 0.2,
-        omega: 10.0 / 180.0 * PI;
-    }
+        omega: 10.0 / 180.0 * PI,
+    };
 
-    let robot1 = scripts::IdealRobot::new(
-        (2.0, 3.0, PI / 6.0),
-        String::from("black"),
-        straight,
-        scripts::IdealCamera::new(map.clone(), (0.5, 6.0), (-PI / 3.0, PI / 3.0)),
-    );
+    let robot1 = IdealRobot::new((2.0, 3.0, PI / 5.0), &BLACK, straight, camera.clone());
+    let robot2 = IdealRobot::new((-2.0, -1.0, PI / 5.0 * 6.0), &RED, circle, camera.clone());
 
-    let robot2 = scripts::IdealRobot::new(
-        (-2.0, -1.0, (PI / 5.0) * 6.0),
-        String::from("red"),
-        circle,
-        scripts::IdealCamera::new(map.clone(), (0.5, 6.0), (-PI / 3.0, PI / 3.0)),
-    );
-
-    world.objects.push(robot1);
-    world.objects.push(robot2);
+    let mut world = World::new(map.clone(), 5, 5, time_span, time_interval);
+    world.objects.push(Box::new(robot1));
+    world.objects.push(Box::new(robot2));
 
     let root = BitMapBackend::gif("world.gif", (500, 500), (time_interval * 1000.0) as u32)
         .unwrap()
