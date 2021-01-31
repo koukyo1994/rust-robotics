@@ -1,5 +1,5 @@
 [package]
-name = "uncertainty"
+name = "noise_simulation1"
 version = "0.1.0"
 authors = ["koukyo1994 <arabiannight1994@yahoo.co.jp>"]
 edition = "2018"
@@ -8,4 +8,4 @@ edition = "2018"
 
 [dependencies]
 plotters = "^0.3.0"
-scripts = { path = "../scripts" }
+scripts = { path = "../../scripts" }
