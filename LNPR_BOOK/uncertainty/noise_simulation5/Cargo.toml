@@ -1,0 +1,13 @@
+[package]
+name = "noise_simulation5"
+version = "0.1.0"
+authors = ["koukyo1994 <arabiannight1994@yahoo.co.jp>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+plotters = "^0.3.0"
+scripts = { path = "../../scripts" }
+rand = "0.8.3"
+rand_distr = "0.4.0"
