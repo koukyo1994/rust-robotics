@@ -188,16 +188,16 @@ impl OpticalSensor for IdealCamera {
 }
 
 #[derive(Clone)]
-pub struct IdealRobot<'a, T: AgentTrait, U: OpticalSensor> {
+pub struct IdealRobot<'a, T: AgentTrait, U: OpticalSensor, C: Color> {
     pub pose: (f32, f32, f32),
-    pub color: &'a RGBColor,
+    pub color: &'a C,
     pub agent: T,
     pub sensor: U,
     pub poses: Vec<(f32, f32, f32)>,
 }
 
-impl<'a, T: AgentTrait, U: OpticalSensor> IdealRobot<'a, T, U> {
-    pub fn new(pose: (f32, f32, f32), color: &'a RGBColor, agent: T, sensor: U) -> Self {
+impl<'a, T: AgentTrait, U: OpticalSensor, C: Color> IdealRobot<'a, T, U, C> {
+    pub fn new(pose: (f32, f32, f32), color: &'a C, agent: T, sensor: U) -> Self {
         IdealRobot {
             pose: pose,
             color: color,
@@ -208,10 +208,10 @@ impl<'a, T: AgentTrait, U: OpticalSensor> IdealRobot<'a, T, U> {
     }
 }
 
-pub trait Robotize<'a, AT: AgentTrait, OS: OpticalSensor> {
+pub trait Robotize<'a, AT: AgentTrait, OS: OpticalSensor, C: 'a + Color> {
     fn pose(&self) -> (f32, f32, f32);
 
-    fn color(&self) -> &'a RGBColor;
+    fn color(&self) -> &'a C;
 
     fn sensor(&self) -> OS;
 
@@ -257,17 +257,26 @@ pub trait Robotize<'a, AT: AgentTrait, OS: OpticalSensor> {
         let poses = self.poses();
         self.sensor()
             .draw(poses[poses.len() - 2], drawing_area, xlim, ylim);
+
+        for i in 1..poses.len() {
+            let from = poses[i - 1];
+            let to = poses[i];
+            let (fromx, fromy) = translate_coord(drawing_area, from.0, from.1, xlim, ylim);
+            let (tox, toy) = translate_coord(drawing_area, to.0, to.1, xlim, ylim);
+
+            draw_line(&coord_spec, (fromx, fromy), (tox, toy), &BLACK);
+        }
     }
 }
 
-impl<'a, AT: AgentTrait + Clone, OS: OpticalSensor + Clone> Robotize<'a, AT, OS>
-    for IdealRobot<'a, AT, OS>
+impl<'a, AT: AgentTrait + Clone, OS: OpticalSensor + Clone, C: Color> Robotize<'a, AT, OS, C>
+    for IdealRobot<'a, AT, OS, C>
 {
     fn pose(&self) -> (f32, f32, f32) {
         self.pose
     }
 
-    fn color(&self) -> &'a RGBColor {
+    fn color(&self) -> &'a C {
         self.color.clone()
     }
 
@@ -308,8 +317,8 @@ impl<'a, AT: AgentTrait + Clone, OS: OpticalSensor + Clone> Robotize<'a, AT, OS>
     }
 }
 
-pub struct World<'a, AT: AgentTrait, OS: OpticalSensor> {
-    pub objects: Vec<Box<dyn Robotize<'a, AT, OS>>>,
+pub struct World<'a, AT: AgentTrait, OS: OpticalSensor, C: Color> {
+    pub objects: Vec<Box<dyn Robotize<'a, AT, OS, C>>>,
     pub map: Map,
     pub xlim: i32,
     pub ylim: i32,
@@ -317,7 +326,7 @@ pub struct World<'a, AT: AgentTrait, OS: OpticalSensor> {
     pub time_interval: f32,
 }
 
-impl<'a, AT: AgentTrait, OS: OpticalSensor> World<'a, AT, OS> {
+impl<'a, AT: AgentTrait, OS: OpticalSensor, C: Color> World<'a, AT, OS, C> {
     pub fn new(map: Map, xlim: i32, ylim: i32, time_span: f32, time_interval: f32) -> Self {
         World {
             map: map,
@@ -433,7 +442,6 @@ fn translate_coord<X: Ranged, Y: Ranged>(
     xlim: i32,
     ylim: i32,
 ) -> (i32, i32) {
-    let (x0, y0) = drawing_area.get_base_pixel();
     let (width, height) = drawing_area.dim_in_pixel();
 
     let xratio = width as f32 / (xlim * 2) as f32;
@@ -442,10 +450,8 @@ fn translate_coord<X: Ranged, Y: Ranged>(
     let xorigin = width as f32 / 2.0;
     let yorigin = height as f32 / 2.0;
 
-    let translated_x =
-        ((x * xratio + xorigin) * ((width as i32 - x0 - y0) as f32) / width as f32) as i32;
-    let translated_y =
-        ((-y * yratio + yorigin) * ((height as i32 - x0 - y0) as f32) / height as f32) as i32;
+    let translated_x = (x * xratio + xorigin) as i32;
+    let translated_y = (-y * yratio + yorigin) as i32;
 
     (translated_x, translated_y)
 }
