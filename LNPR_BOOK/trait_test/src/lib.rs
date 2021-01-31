@@ -1,5 +1,6 @@
 use std::f32::consts::PI;
 
+use plotters::coord::types::RangedCoordi32;
 use plotters::coord::Shift;
 use plotters::prelude::*;
 
@@ -25,6 +26,29 @@ pub struct Landmark {
     id: i32,
 }
 
+impl Landmark {
+    fn draw<X: Ranged, Y: Ranged>(
+        &self,
+        drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
+        xlim: i32,
+        ylim: i32,
+    ) {
+        let (x, y) = translate_coord(drawing_area, self.position.0, self.position.1, xlim, ylim);
+        let coord_spec = drawing_area.strip_coord_spec();
+        coord_spec
+            .draw(&Cross::new((x, y), 10, Into::<ShapeStyle>::into(&YELLOW)))
+            .unwrap();
+
+        coord_spec
+            .draw(&Text::new(
+                format!("id: {:}", self.id),
+                (x, y),
+                ("sans-serif", 10),
+            ))
+            .unwrap();
+    }
+}
+
 #[derive(Clone)]
 pub struct Map {
     landmarks: Vec<Landmark>,
@@ -35,6 +59,17 @@ impl Map {
         Map {
             landmarks: Vec::new(),
         }
+    }
+
+    fn draw<X: Ranged, Y: Ranged>(
+        &self,
+        drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
+        xlim: i32,
+        ylim: i32,
+    ) {
+        self.landmarks
+            .iter()
+            .for_each(|l| l.clone().draw(drawing_area, xlim, ylim));
     }
 
     fn append_landmark(&mut self, position: (f32, f32)) {
@@ -84,6 +119,27 @@ pub trait OpticalSensor {
     fn data(&mut self, cam_pose: (f32, f32, f32)) -> &Vec<(f32, f32)>;
 
     fn obs_fn(cam_pose: (f32, f32, f32), obj_pos: (f32, f32)) -> (f32, f32);
+
+    fn draw<X: Ranged, Y: Ranged>(
+        &self,
+        cam_pose: (f32, f32, f32),
+        drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
+        xlim: i32,
+        ylim: i32,
+    ) {
+        let (x, y, theta) = cam_pose;
+        let (x_, y_) = translate_coord(drawing_area, x, y, xlim, ylim);
+
+        let coord_spec = drawing_area.strip_coord_spec();
+        self.lastdata().iter().for_each(|l| {
+            let (distance, direction) = l;
+            let lx = x + distance * (direction + theta).cos();
+            let ly = y + distance * (direction + theta).sin();
+
+            let (lx_, ly_) = translate_coord(drawing_area, lx, ly, xlim, ylim);
+            draw_line(&coord_spec, (x_, y_), (lx_, ly_), &MAGENTA);
+        });
+    }
 }
 
 impl OpticalSensor for IdealCamera {
@@ -167,14 +223,40 @@ pub trait Robotize<'a, AT: AgentTrait, OS: OpticalSensor> {
 
     fn state_transition(&mut self, nu: f32, omega: f32, time: f32);
 
-    fn one_step(mut self, time_interval: f32) -> Self
-    where
-        Self: Sized,
-    {
-        let (nu, omega) = self.agent().decision(self.sensor().data(self.pose()));
-        self.state_transition(nu, omega, time_interval);
-        self.append_poses(self.pose());
-        self
+    fn one_step(&mut self, time_interval: f32);
+
+    fn draw(
+        &self,
+        drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<RangedCoordi32, RangedCoordi32>>,
+        xlim: i32,
+        ylim: i32,
+    ) {
+        let pose = self.pose();
+        let (x, y) = translate_coord(drawing_area, pose.0, pose.1, xlim, ylim);
+        let round = 10.0;
+
+        let direction_x_end = x + (round * pose.2.cos()) as i32;
+        let direction_y_end = y + (round * -pose.2.sin()) as i32;
+
+        let coord_spec = drawing_area.strip_coord_spec();
+        draw_line(
+            &coord_spec,
+            (x, y),
+            (direction_x_end, direction_y_end),
+            self.color(),
+        );
+
+        coord_spec
+            .draw(&Circle::new(
+                (x, y),
+                round as i32,
+                Into::<ShapeStyle>::into(self.color()),
+            ))
+            .unwrap();
+
+        let poses = self.poses();
+        self.sensor()
+            .draw(poses[poses.len() - 2], drawing_area, xlim, ylim);
     }
 }
 
@@ -205,6 +287,13 @@ impl<'a, AT: AgentTrait + Clone, OS: OpticalSensor + Clone> Robotize<'a, AT, OS>
         self.poses.push(pose);
     }
 
+    fn one_step(&mut self, time_interval: f32) {
+        let obs = self.sensor.data(self.pose);
+        let (nu, omega) = self.agent.decision(obs);
+        self.state_transition(nu, omega, time_interval);
+        self.append_poses(self.pose);
+    }
+
     fn state_transition(&mut self, nu: f32, omega: f32, time: f32) {
         let theta = self.pose.2;
         if omega.abs() < 1e-10 {
@@ -222,47 +311,77 @@ impl<'a, AT: AgentTrait + Clone, OS: OpticalSensor + Clone> Robotize<'a, AT, OS>
 pub struct World<'a, AT: AgentTrait, OS: OpticalSensor> {
     objects: Vec<Box<dyn Robotize<'a, AT, OS>>>,
     map: Map,
+    xlim: i32,
+    ylim: i32,
     time_span: f32,
     time_interval: f32,
 }
 
 impl<'a, AT: AgentTrait, OS: OpticalSensor> World<'a, AT, OS> {
-    fn new(map: Map, time_span: f32, time_interval: f32) -> Self {
+    fn new(map: Map, xlim: i32, ylim: i32, time_span: f32, time_interval: f32) -> Self {
         World {
             map: map,
+            xlim: xlim,
+            ylim: ylim,
             time_span: time_span,
             time_interval: time_interval,
             objects: Vec::new(),
         }
     }
-}
 
-pub struct Canvas<'a, 'b> {
-    drawing_area: &'a DrawingArea<BitMapBackend<'b>, Shift>,
-    xlim: i32,
-    ylim: i32,
-}
+    fn draw(&mut self, drawing_area: &DrawingArea<BitMapBackend, Shift>) {
+        let max_iteration = (self.time_span / self.time_interval) as i32;
+        for i in 0..max_iteration {
+            drawing_area.fill(&WHITE).unwrap();
 
-impl<'a, 'b> Canvas<'a, 'b> {
-    fn new(drawing_area: &'a DrawingArea<BitMapBackend<'b>, Shift>) -> Self {
-        Canvas {
-            drawing_area: drawing_area,
-            xlim: 5,
-            ylim: 5,
+            let mut chart = ChartBuilder::on(drawing_area)
+                .x_label_area_size(40)
+                .y_label_area_size(40)
+                .margin(5)
+                .build_cartesian_2d(-self.xlim..self.xlim, -self.ylim..self.ylim)
+                .unwrap();
+
+            chart
+                .configure_mesh()
+                .disable_mesh()
+                .x_desc("X")
+                .y_desc("Y")
+                .axis_desc_style(("sans-serif", 15))
+                .draw()
+                .unwrap();
+
+            let plotting_area = chart.plotting_area();
+
+            self.map.draw(&plotting_area, self.xlim, self.ylim);
+
+            self.one_step((i as f32) * self.time_interval, &plotting_area);
+            for i in 0..self.objects.len() {
+                self.objects[i].draw(&plotting_area, self.xlim, self.ylim);
+            }
+
+            drawing_area.present().unwrap();
         }
     }
 
-    fn set_xlim(&mut self, xlim: i32) {
-        self.xlim = xlim;
-    }
+    fn one_step<X: Ranged, Y: Ranged>(
+        &mut self,
+        i: f32,
+        drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
+    ) {
+        let (x, y) = drawing_area.dim_in_pixel();
+        let (xpos, ypos) = ((x as f32 / 10.0) as i32, (y as f32 / 10.0) as i32);
+        drawing_area
+            .strip_coord_spec()
+            .draw(&Text::new(
+                format!("t={:.2}", i),
+                (xpos, ypos),
+                ("sans-serif", 15),
+            ))
+            .unwrap();
 
-    fn set_ylim(&mut self, ylim: i32) {
-        self.ylim = ylim;
-    }
-
-    fn set_coord(&mut self, xlim: i32, ylim: i32) {
-        self.set_xlim(xlim);
-        self.set_ylim(ylim);
+        for i in 0..self.objects.len() {
+            self.objects[i].one_step(self.time_interval);
+        }
     }
 }
 
@@ -305,6 +424,30 @@ fn draw_line<C: Color>(
 
         y += grad;
     }
+}
+
+fn translate_coord<X: Ranged, Y: Ranged>(
+    drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
+    x: f32,
+    y: f32,
+    xlim: i32,
+    ylim: i32,
+) -> (i32, i32) {
+    let (x0, y0) = drawing_area.get_base_pixel();
+    let (width, height) = drawing_area.dim_in_pixel();
+
+    let xratio = width as f32 / (xlim * 2) as f32;
+    let yratio = height as f32 / (ylim * 2) as f32;
+
+    let xorigin = width as f32 / 2.0;
+    let yorigin = height as f32 / 2.0;
+
+    let translated_x =
+        ((x * xratio + xorigin) * ((width as i32 - x0 - y0) as f32) / width as f32) as i32;
+    let translated_y =
+        ((-y * yratio + yorigin) * ((height as i32 - x0 - y0) as f32) / height as f32) as i32;
+
+    (translated_x, translated_y)
 }
 
 #[cfg(test)]
@@ -423,7 +566,7 @@ mod tests {
         let mut robot = IdealRobot::new((-2.0, 3.0, 0.0), &BLACK, agent, camera);
         assert_eq!(robot.poses.len(), 1);
 
-        robot = robot.one_step(1.0);
+        robot.one_step(1.0);
         assert_eq!(robot.poses.len(), 2);
         assert_eq!(robot.pose, (-1.8, 3.0, 0.0));
     }
@@ -438,15 +581,39 @@ mod tests {
         };
 
         let robot = IdealRobot::new((-2.0, 3.0, 0.0), &BLACK, agent, camera);
-        let mut world = World::new(map.clone(), 10.0, 1.0);
+        let mut world = World::new(map.clone(), 5, 5, 10.0, 1.0);
         world.objects.push(Box::new(robot));
     }
 
     #[test]
-    fn test_create_canvas() {
+    fn test_draw_world() {
+        let mut map = Map::new();
+
+        map.append_landmark((2.0, -2.0));
+        map.append_landmark((-1.0, -3.0));
+        map.append_landmark((3.0, 3.0));
+
+        let camera = IdealCamera::new(map.clone(), (0.5, 6.0), (-PI / 3.0, PI / 3.0));
+
+        let straight = Agent {
+            nu: 0.2,
+            omega: 0.0,
+        };
+        let circle = Agent {
+            nu: 0.2,
+            omega: 10.0 / 180.0 * PI,
+        };
+
+        let robot1 = IdealRobot::new((2.0, 3.0, PI / 5.0), &BLACK, straight, camera.clone());
+        let robot2 = IdealRobot::new((-2.0, -1.0, PI / 5.0 * 6.0), &RED, circle, camera.clone());
+
+        let mut world = World::new(map.clone(), 5, 5, 10.0, 1.0);
+        world.objects.push(Box::new(robot1));
+        world.objects.push(Box::new(robot2));
+
         let root = BitMapBackend::gif("world.gif", (500, 500), 1000)
             .unwrap()
             .into_drawing_area();
-        let _canvas = Canvas::new(&root);
+        world.draw(&root);
     }
 }

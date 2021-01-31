@@ -102,12 +102,9 @@ impl World {
             ))
             .unwrap();
 
-        let objects = self
-            .objects
-            .iter()
-            .map(|r| r.clone().one_step(self.time_interval))
-            .collect::<Vec<IdealRobot>>();
-        self.objects = objects;
+        for i in 0..self.objects.len() {
+            self.objects[i].one_step(self.time_interval);
+        }
     }
 }
 
@@ -254,12 +251,11 @@ impl IdealRobot {
         }
     }
 
-    fn one_step(mut self, time_interval: f32) -> IdealRobot {
+    fn one_step(&mut self, time_interval: f32) {
         let obs = self.sensor.data(self.pose);
         let (nu, omega) = self.agent.decision(obs);
         self.state_transition(nu, omega, time_interval);
         self.poses.push(self.pose);
-        self
     }
 }
 
@@ -366,7 +362,7 @@ impl IdealCamera {
 
 fn main() {
     let time_span = 10.0;
-    let time_interval = 0.1;
+    let time_interval = 1.0;
 
     let landmarks = Vec::new();
     let objects = Vec::new();
