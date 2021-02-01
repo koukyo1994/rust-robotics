@@ -51,7 +51,7 @@ impl Landmark {
 
 #[derive(Clone)]
 pub struct Map {
-    landmarks: Vec<Landmark>,
+    pub landmarks: Vec<Landmark>,
 }
 
 impl Map {
