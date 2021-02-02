@@ -12,11 +12,26 @@ pub struct Agent {
 
 pub trait AgentTrait {
     fn decision(&self, obs: &Vec<(f32, f32)>) -> (f32, f32);
+
+    fn draw<X: Ranged, Y: Ranged>(
+        &self,
+        drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
+        xlim: i32,
+        ylim: i32,
+    );
 }
 
 impl AgentTrait for Agent {
     fn decision(&self, _obs: &Vec<(f32, f32)>) -> (f32, f32) {
         (self.nu, self.omega)
+    }
+
+    fn draw<X: Ranged, Y: Ranged>(
+        &self,
+        _drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
+        _xlim: i32,
+        _ylim: i32,
+    ) {
     }
 }
 
@@ -257,6 +272,8 @@ pub trait Robotize<'a, AT: AgentTrait, OS: OpticalSensor, C: 'a + Color> {
         let poses = self.poses();
         self.sensor()
             .draw(poses[poses.len() - 2], drawing_area, xlim, ylim);
+
+        self.agent().draw(drawing_area, xlim, ylim);
 
         for i in 1..poses.len() {
             let from = poses[i - 1];
