@@ -48,10 +48,23 @@ impl Mcl {
 
     fn draw<X: Ranged, Y: Ranged>(
         &self,
-        _drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
-        _xlim: i32,
-        _ylim: i32,
+        drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
+        xlim: i32,
+        ylim: i32,
     ) {
+        let coord_spec = drawing_area.strip_coord_spec();
+        self.particles.iter().for_each(|p| {
+            let (x, y, t) = p.init_pose;
+            let from = translate_coord(drawing_area, x, y, xlim, ylim);
+            let to = (
+                from.0 + (20.0 * t.cos()) as i32,
+                from.1 + (20.0 * -t.sin()) as i32,
+            );
+
+            coord_spec
+                .draw(&Quiver::new(from, to, Into::<ShapeStyle>::into(&BLUE)))
+                .unwrap();
+        });
     }
 }
 

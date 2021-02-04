@@ -452,7 +452,7 @@ fn draw_line<C: Color>(
     }
 }
 
-fn translate_coord<X: Ranged, Y: Ranged>(
+pub fn translate_coord<X: Ranged, Y: Ranged>(
     drawing_area: &DrawingArea<BitMapBackend, Cartesian2d<X, Y>>,
     x: f32,
     y: f32,
