@@ -176,23 +176,16 @@ impl<'a, AT: AgentTrait + Clone, OS: OpticalSensor + Clone, C: 'a + Color> Robot
         let decision = self.agent.decision(obs);
         let biased = self.bias(decision.0, decision.1);
         let (nu, omega) = self.stuck(biased.0, biased.1, time_interval);
-        self.state_transition(nu, omega, time_interval);
+        self._state_transition(nu, omega, time_interval);
         self.pose = self.noise(self.pose, nu, omega, time_interval);
         self.pose = self.kidnap(self.pose, time_interval);
         self.append_poses(self.pose);
     }
 
-    fn state_transition(&mut self, nu: f32, omega: f32, time: f32) {
-        let theta = self.pose.2;
-        if omega.abs() < 1e-10 {
-            self.pose.0 += nu * theta.cos() * time;
-            self.pose.1 += nu * theta.sin() * time;
-            self.pose.2 += omega * time;
-        } else {
-            self.pose.0 += nu / omega * ((theta + omega * time).sin() - theta.sin());
-            self.pose.1 += nu / omega * (-(theta + omega * time).cos() + theta.cos());
-            self.pose.2 += omega * time;
-        }
+    fn _state_transition(&mut self, nu: f32, omega: f32, time: f32) {
+        self.pose = IdealRobot::<Agent, IdealCamera, RGBColor>::state_transition(
+            nu, omega, time, self.pose,
+        );
     }
 }
 

@@ -11,7 +11,7 @@ pub struct Agent {
 }
 
 pub trait AgentTrait {
-    fn decision(&self, obs: &Vec<(f32, f32)>) -> (f32, f32);
+    fn decision(&mut self, obs: &Vec<(f32, f32)>) -> (f32, f32);
 
     fn draw<X: Ranged, Y: Ranged>(
         &self,
@@ -22,7 +22,7 @@ pub trait AgentTrait {
 }
 
 impl AgentTrait for Agent {
-    fn decision(&self, _obs: &Vec<(f32, f32)>) -> (f32, f32) {
+    fn decision(&mut self, _obs: &Vec<(f32, f32)>) -> (f32, f32) {
         (self.nu, self.omega)
     }
 
@@ -221,6 +221,28 @@ impl<'a, T: AgentTrait, U: OpticalSensor, C: Color> IdealRobot<'a, T, U, C> {
             poses: vec![pose],
         }
     }
+
+    pub fn state_transition(
+        nu: f32,
+        omega: f32,
+        time: f32,
+        pose: (f32, f32, f32),
+    ) -> (f32, f32, f32) {
+        let theta = pose.2;
+        if omega.abs() < 1e-10 {
+            (
+                pose.0 + nu * theta.cos() * time,
+                pose.1 + nu * theta.sin() * time,
+                pose.2 + omega * time,
+            )
+        } else {
+            (
+                pose.0 + nu / omega * ((theta + omega * time).sin() - theta.sin()),
+                pose.1 + nu / omega * (-(theta + omega * time).cos() + theta.cos()),
+                pose.2 + omega * time,
+            )
+        }
+    }
 }
 
 pub trait Robotize<'a, AT: AgentTrait, OS: OpticalSensor, C: 'a + Color> {
@@ -236,7 +258,7 @@ pub trait Robotize<'a, AT: AgentTrait, OS: OpticalSensor, C: 'a + Color> {
 
     fn agent(&self) -> AT;
 
-    fn state_transition(&mut self, nu: f32, omega: f32, time: f32);
+    fn _state_transition(&mut self, nu: f32, omega: f32, time: f32);
 
     fn one_step(&mut self, time_interval: f32);
 
@@ -316,21 +338,12 @@ impl<'a, AT: AgentTrait + Clone, OS: OpticalSensor + Clone, C: Color> Robotize<'
     fn one_step(&mut self, time_interval: f32) {
         let obs = self.sensor.data(self.pose);
         let (nu, omega) = self.agent.decision(obs);
-        self.state_transition(nu, omega, time_interval);
+        self._state_transition(nu, omega, time_interval);
         self.append_poses(self.pose);
     }
 
-    fn state_transition(&mut self, nu: f32, omega: f32, time: f32) {
-        let theta = self.pose.2;
-        if omega.abs() < 1e-10 {
-            self.pose.0 += nu * theta.cos() * time;
-            self.pose.1 += nu * theta.sin() * time;
-            self.pose.2 += omega * time;
-        } else {
-            self.pose.0 += nu / omega * ((theta + omega * time).sin() - theta.sin());
-            self.pose.1 += nu / omega * (-(theta + omega * time).cos() + theta.cos());
-            self.pose.2 += omega * time;
-        }
+    fn _state_transition(&mut self, nu: f32, omega: f32, time: f32) {
+        self.pose = Self::state_transition(nu, omega, time, self.pose);
     }
 }
 
@@ -487,7 +500,7 @@ mod tests {
 
     #[test]
     fn test_agent_decision() {
-        let agent = Agent {
+        let mut agent = Agent {
             nu: 0.2,
             omega: 0.0,
         };
