@@ -18,7 +18,7 @@ fn main() {
     for _i in 0..100 {
         let robot = Robot::new(initial_pose, &RED, straight.clone(), camera.clone())
             .set_noise(5.0, PI / 60.0)
-            .set_bias((0.0, 0.0))
+            .set_bias((0.1, 0.1))
             .set_stuck(f32::INFINITY, 1e-100)
             .set_kidnap(f32::INFINITY, (-5.0, 5.0), (-5.0, 5.0));
 
@@ -58,7 +58,10 @@ fn main() {
     println!("r mean: {:.5}", mean);
 
     let sigma_omega_nu = (var / mean).sqrt();
-    let mut file = std::fs::File::create("../noise_parameters.txt").unwrap();
-    file.write_fmt(format_args!("σ_ων: {:.5}\n", sigma_omega_nu))
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open("../noise_parameters.txt")
+        .unwrap();
+    file.write_fmt(format_args!("σ_νν: {:.5}\n", sigma_omega_nu))
         .unwrap();
 }
