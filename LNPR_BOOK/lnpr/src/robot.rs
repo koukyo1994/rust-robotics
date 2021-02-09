@@ -262,21 +262,18 @@ pub struct Camera {
 }
 
 impl Camera {
-    pub fn new(
-        map: Map,
-        distance_range: (f32, f32),
-        direction_range: (f32, f32),
-        distance_noise_rate: f32,
-        direction_noise: f32,
-        distance_bias_rate_std: f32,
-        direction_bias_rate_std: f32,
-        phantom_prob: f32,
-        phantom_range_x: (f32, f32),
-        phantom_range_y: (f32, f32),
-        oversight_prob: f32,
-        occlusion_prob: f32,
-    ) -> Self {
+    pub fn new(map: Map, distance_range: (f32, f32), direction_range: (f32, f32)) -> Self {
         let mut r = rand::thread_rng();
+        let distance_noise_rate = 0.1;
+        let direction_noise = PI / 90.0;
+        let distance_bias_rate_std = 0.1;
+        let direction_bias_rate_std = PI / 90.0;
+        let phantom_prob = 0.0;
+        let phantom_range_x = (-5.0, 5.0);
+        let phantom_range_y = (-5.0, 5.0);
+        let oversight_prob = 0.1;
+        let occlusion_prob = 0.0;
+
         let distance_bias = Normal::new(0.0, distance_bias_rate_std)
             .unwrap()
             .sample(&mut r);
@@ -302,6 +299,49 @@ impl Camera {
             oversight_prob: oversight_prob,
             occlusion_prob: occlusion_prob,
         }
+    }
+
+    pub fn set_noise(mut self, distance_noise_rate: f32, direction_noise: f32) -> Self {
+        self.distance_noise_rate = distance_noise_rate;
+        self.direction_noise = direction_noise;
+        self
+    }
+
+    pub fn set_bias(mut self, distance_bias_rate_std: f32, direction_bias_rate_std: f32) -> Self {
+        let mut r = rand::thread_rng();
+        let distance_bias = Normal::new(0.0, distance_bias_rate_std)
+            .unwrap()
+            .sample(&mut r);
+        let direction_bias = Normal::new(0.0, direction_bias_rate_std)
+            .unwrap()
+            .sample(&mut r);
+        self.distance_bias = distance_bias;
+        self.direction_bias = direction_bias;
+        self
+    }
+
+    pub fn set_phantom(
+        mut self,
+        phantom_prob: f32,
+        phantom_range_x: (f32, f32),
+        phantom_range_y: (f32, f32),
+    ) -> Self {
+        let phantom_dist_x = Uniform::from(phantom_range_x.0..phantom_range_x.1);
+        let phantom_dist_y = Uniform::from(phantom_range_y.0..phantom_range_y.1);
+        self.phantom_prob = phantom_prob;
+        self.phantom_dist_x = phantom_dist_x;
+        self.phantom_dist_y = phantom_dist_y;
+        self
+    }
+
+    pub fn set_oversight(mut self, oversight_prob: f32) -> Self {
+        self.oversight_prob = oversight_prob;
+        self
+    }
+
+    pub fn set_occlusion(mut self, occlusion_prob: f32) -> Self {
+        self.occlusion_prob = occlusion_prob;
+        self
     }
 
     fn noise(&self, relpos: (f32, f32)) -> (f32, f32) {
