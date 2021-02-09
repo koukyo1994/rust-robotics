@@ -52,7 +52,7 @@ fn main() {
         .unwrap();
 
     // Calculate the noise parameters
-    let var: f32 = df.var().column("r").unwrap().mean().unwrap();
+    let var: f32 = df.var().column("theta").unwrap().mean().unwrap();
     let mean: f32 = r_series.mean().unwrap();
     println!("theta var: {:.5}", var);
     println!("r mean: {:.5}", mean);

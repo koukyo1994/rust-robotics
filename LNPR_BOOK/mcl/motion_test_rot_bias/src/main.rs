@@ -7,16 +7,16 @@ use std::io::Write;
 fn main() {
     let map = Map::new();
     let mut world = World::new(map.clone(), 5, 5, 40.0, 0.1);
-    let straight = Agent {
-        nu: 0.1,
-        omega: 0.0,
+    let circle = Agent {
+        nu: 0.0,
+        omega: 0.1,
     };
 
     let camera = IdealCamera::new(map.clone(), (0.5, 4.0), (-0.6, 0.6));
 
     let initial_pose = (0.0, 0.0, 0.0);
     for _i in 0..100 {
-        let robot = Robot::new(initial_pose, &RED, straight.clone(), camera.clone())
+        let robot = Robot::new(initial_pose, &RED, circle.clone(), camera.clone())
             .set_noise(5.0, PI / 60.0)
             .set_bias((0.1, 0.1))
             .set_stuck(f32::INFINITY, 1e-100)
@@ -52,16 +52,16 @@ fn main() {
         .unwrap();
 
     // Calculate the noise parameters
-    let var: f32 = df.var().column("r").unwrap().mean().unwrap();
-    let mean: f32 = r_series.mean().unwrap();
-    println!("r var: {:.5}", var);
-    println!("r mean: {:.5}", mean);
+    let var: f32 = df.var().column("theta").unwrap().mean().unwrap();
+    let mean: f32 = theta_series.mean().unwrap();
+    println!("theta var: {:.5}", var);
+    println!("theta mean: {:.5}", mean);
 
-    let sigma_nu_nu = (var / mean).sqrt();
+    let sigma_omega_omega = (var / mean).sqrt();
     let mut file = std::fs::OpenOptions::new()
         .append(true)
         .open("../noise_parameters.txt")
         .unwrap();
-    file.write_fmt(format_args!("σ_νν: {:.5}\n", sigma_nu_nu))
+    file.write_fmt(format_args!("σ_ωω: {:.5}\n", sigma_omega_omega))
         .unwrap();
 }
