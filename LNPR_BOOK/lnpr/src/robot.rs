@@ -30,22 +30,18 @@ pub struct Robot<'a, AT: AgentTrait, OS: OpticalSensor, C: Color> {
 }
 
 impl<'a, AT: AgentTrait, OS: OpticalSensor, C: Color> Robot<'a, AT, OS, C> {
-    pub fn new(
-        pose: (f32, f32, f32),
-        color: &'a C,
-        agent: AT,
-        sensor: OS,
-        noise_per_meter: f32,
-        noise_std: f32,
-        bias_rate_stds: (f32, f32),
-        expected_stuck_time: f32,
-        expected_escape_time: f32,
-        expected_kidnap_time: f32,
-        kidnap_range_x: (f32, f32),
-        kidnap_range_y: (f32, f32),
-    ) -> Self {
-        let pdf = Exp::new(1.0 / (1e-100 + noise_per_meter)).unwrap();
+    pub fn new(pose: (f32, f32, f32), color: &'a C, agent: AT, sensor: OS) -> Self {
+        let noise_per_meter = 5.0;
+        let noise_std = PI / 60.0;
+        let bias_rate_stds = (0.1, 0.1);
+        let expected_stuck_time = f32::INFINITY;
+        let expected_escape_time = 1e-100;
+        let expected_kidnap_time = f32::INFINITY;
+        let kidnap_range_x = (-5.0, 5.0);
+        let kidnap_range_y = (-5.0, 5.0);
+
         let mut r = rand::thread_rng();
+        let pdf = Exp::new(1.0 / (1e-100 + noise_per_meter)).unwrap();
         let distance_until_noise = pdf.sample(&mut r);
         let theta_noise = Normal::new(0.0, noise_std).unwrap();
 
@@ -86,6 +82,64 @@ impl<'a, AT: AgentTrait, OS: OpticalSensor, C: Color> Robot<'a, AT, OS, C> {
             kidnap_dist_y: kidnap_dist_y,
             kidnap_dist_o: kidnap_dist_o,
         }
+    }
+
+    pub fn set_noise(mut self, noise_per_meter: f32, noise_std: f32) -> Self {
+        let mut r = rand::thread_rng();
+        let pdf = Exp::new(1.0 / (1e-100 + noise_per_meter)).unwrap();
+        let distance_until_noise = pdf.sample(&mut r);
+        let theta_noise = Normal::new(0.0, noise_std).unwrap();
+
+        self.noise_pdf = pdf;
+        self.distance_until_noise = distance_until_noise;
+        self.theta_noise = theta_noise;
+        self
+    }
+
+    pub fn set_bias(mut self, bias_rate_stds: (f32, f32)) -> Self {
+        let mut r = rand::thread_rng();
+        let bias_rate_nu = Normal::new(1.0, bias_rate_stds.0).unwrap().sample(&mut r);
+        let bias_rate_omega = Normal::new(1.0, bias_rate_stds.1).unwrap().sample(&mut r);
+
+        self.bias_rate_nu = bias_rate_nu;
+        self.bias_rate_omega = bias_rate_omega;
+        self
+    }
+
+    pub fn set_stuck(mut self, expected_stuck_time: f32, expected_escape_time: f32) -> Self {
+        let mut r = rand::thread_rng();
+        let stuck_pdf = Exp::new(1.0 / (1e-100 + expected_stuck_time)).unwrap();
+        let escape_pdf = Exp::new(1.0 / (1e-100 + expected_escape_time)).unwrap();
+
+        let time_until_stuck = stuck_pdf.sample(&mut r);
+        let time_until_escape = escape_pdf.sample(&mut r);
+
+        self.stuck_pdf = stuck_pdf;
+        self.escape_pdf = escape_pdf;
+        self.time_until_stuck = time_until_stuck;
+        self.time_until_escape = time_until_escape;
+        self
+    }
+
+    pub fn set_kidnap(
+        mut self,
+        expected_kidnap_time: f32,
+        kidnap_range_x: (f32, f32),
+        kidnap_range_y: (f32, f32),
+    ) -> Self {
+        let mut r = rand::thread_rng();
+        let kidnap_pdf = Exp::new(1.0 / (1e-100 + expected_kidnap_time)).unwrap();
+        let time_until_kidnap = kidnap_pdf.sample(&mut r);
+        let kidnap_dist_x = Uniform::from(kidnap_range_x.0..kidnap_range_x.1);
+        let kidnap_dist_y = Uniform::from(kidnap_range_y.0..kidnap_range_y.1);
+        let kidnap_dist_o = Uniform::from(0.0..(2.0 * PI));
+
+        self.kidnap_pdf = kidnap_pdf;
+        self.time_until_kidnap = time_until_kidnap;
+        self.kidnap_dist_x = kidnap_dist_x;
+        self.kidnap_dist_y = kidnap_dist_y;
+        self.kidnap_dist_o = kidnap_dist_o;
+        self
     }
 
     fn noise(
